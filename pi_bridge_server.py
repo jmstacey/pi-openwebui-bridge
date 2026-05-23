@@ -3,7 +3,7 @@
 Pi Bridge Server
 
 A small macOS host bridge for OpenWebUI Functions running in Docker.
-It owns pi --mode rpc subprocesses and exposes a narrow HTTP/SSE API.
+It owns pi-life-web --mode rpc subprocesses and exposes a narrow HTTP/SSE API.
 
 Endpoints:
   GET  /health
@@ -64,7 +64,7 @@ def sse_line(event: dict) -> bytes:
 class PiBridgeState:
     def __init__(
         self,
-        pi_binary: str = "pi",
+        pi_binary: str = "pi-life-web",
         session_dir: str = str(Path.home() / ".pi" / "owui-sessions"),
         idle_timeout_seconds: int = 300,
         fallback_model: str = "openai-codex/gpt-5.2",
@@ -722,7 +722,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pi bridge server for OpenWebUI Functions")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--pi-binary", default=os.environ.get("PI_BINARY", "pi"))
+    parser.add_argument("--pi-binary", default=os.environ.get("PI_BINARY", "pi-life-web"))
     parser.add_argument("--session-dir", default=os.environ.get("PI_BRIDGE_SESSION_DIR", str(Path.home() / ".pi" / "owui-sessions")))
     parser.add_argument("--workspace-dir", default=os.environ.get("PI_BRIDGE_WORKSPACE_DIR", str(Path.home() / ".pi" / "owui-bridge-workspace")))
     parser.add_argument("--idle-timeout", type=int, default=int(os.environ.get("PI_BRIDGE_IDLE_TIMEOUT", "300")))

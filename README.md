@@ -1,6 +1,6 @@
 # Pi Open WebUI Bridge
 
-A small macOS bridge for routing Open WebUI chat requests to `pi --mode rpc`.
+A small macOS bridge for routing Open WebUI chat requests to `pi-life-web --mode rpc`.
 
 ## Files
 - `pi_bridge_server.py` — host bridge server

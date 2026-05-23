@@ -3,7 +3,7 @@ title: Pi Agent Bridge Function
 author: jon
 description: |
   OpenWebUI Function that connects Dockerized OpenWebUI to a macOS Pi bridge.
-  The bridge owns pi --mode rpc subprocesses on the host. This Function owns
+  The bridge owns pi-life-web --mode rpc subprocesses on the host. This Function owns
   OpenWebUI integration: model listing, streaming response text, thinking blocks,
   and real WebSocket status events via __event_emitter__.
 
