@@ -116,7 +116,7 @@ When configured, the bridge projects Pi sessions into Open WebUI:
 - whenever indexed Pi session files are created, modified, or deleted, via a polling watcher
 - when manually triggered with `POST /pi/sync/openwebui`
 
-The polling interval defaults to 5 seconds and can be changed with `PI_BRIDGE_PROJECTION_SYNC_INTERVAL` or `--projection-sync-interval`.
+The polling interval defaults to 30 seconds and can be changed with `PI_BRIDGE_PROJECTION_SYNC_INTERVAL` or `--projection-sync-interval`.
 
 To continue a canonical Pi session from Open WebUI, pass either `pi_session_id` or `pi_session_file` in the Open WebUI chat metadata/body. The function forwards that metadata to the bridge, which starts Pi with `--session <file>`. Projected Open WebUI chat IDs are also mapped back to their Pi session files so normal Open WebUI chat requests can resume the projected Pi session.
 
