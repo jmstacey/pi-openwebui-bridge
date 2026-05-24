@@ -1,23 +1,23 @@
-# Pi and Open WebUI Bridge
+# [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com) Bridge
 
-A bridge between Pi and Open WebUI.
+A bridge between [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com).
 
 ## Why
 
 - Start a session in Pi and continue your session in Open WebUI.
-- Start a chat in Open WebUI and run it with bi on the backend.
+- Start a chat in Open WebUI and run it with Pi on the backend.
 - Pi sessions synced to Open WebUI and back as you would expect.
 - Access Pi loop, extensions, skills, providers, loops.
-- Use OpenWebUi Functions and UI. Example: mermaid diagrams.
+- Use Open WebUI Functions and UI. Example: mermaid diagrams.
 - Use Pi tooling from Open WebUI.
 - Delete a session in Pi and it gets deleted from Open WebUI.
-- Delete a Pi-backed chat from Open WebUI and it's session file gets deleted on your computer.
+- Delete a Pi-backed chat from Open WebUI and its session file gets deleted on your computer.
 
 ## What
 
-- This is a independent bridge server that presents Pi and its scoped models to Open WebUi in the model list.
+- This is an independent bridge server that presents Pi and its scoped models to Open WebUI in the model list.
 - The bridge syncs Pi sessions to Open WebUI.
-- The bridge uses Pi RPC mode to act as a provider to Open WebUi. `pi --mode rpc`.
+- The bridge uses Pi RPC mode to act as a provider to Open WebUI. `pi --mode rpc`.
 - Use a Pi profile to limit access, tools, etc.
 
 ## Install
