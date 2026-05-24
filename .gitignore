@@ -21,4 +21,5 @@ ENV/
 
 # Local bridge/runtime files
 .pi/
+.ralph/
 *.log
