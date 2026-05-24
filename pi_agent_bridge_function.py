@@ -72,14 +72,14 @@ class Pipe:
             {"type": "status", "data": {"description": description, "done": done}},
         )
 
-    def _done_chunk(self, model: str) -> str:
+    def _done_chunk(self, model: str, finish_reason: str = "stop") -> str:
         msg = {
             "id": f"{model}-{uuid.uuid4()}",
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": model,
             "choices": [
-                {"index": 0, "delta": {}, "logprobs": None, "finish_reason": "stop"}
+                {"index": 0, "delta": {}, "logprobs": None, "finish_reason": finish_reason}
             ],
         }
         return f"data: {json.dumps(msg)}"
@@ -199,8 +199,10 @@ class Pipe:
 
         elif etype == "error":
             message = event.get("message") or "Unknown Pi bridge error"
-            await self._status(__event_emitter__, message, True)
-            yield f"\n\n[Pi Bridge] {message}\n"
+            stop_reason = event.get("stop_reason") or event.get("stopReason") or "error"
+            status = message if stop_reason == "stop" else f"Pi stopped with {stop_reason}: {message}"
+            await self._status(__event_emitter__, status, True)
+            yield f"\n\n[Pi Bridge] {status}\n"
 
     async def _stream_bridge(
         self,
@@ -212,6 +214,7 @@ class Pipe:
         headers["Accept"] = "text/event-stream"
         timeout = aiohttp.ClientTimeout(total=self.valves.request_timeout_seconds, sock_read=None)
         done = False
+        finish_reason = "stop"
 
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -225,6 +228,7 @@ class Pipe:
                         await self._status(__event_emitter__, message, True)
                         yield f"[Pi Bridge] {message}"
                         done = True
+                        finish_reason = "error"
                         return
 
                     async for raw_line in resp.content:
@@ -242,7 +246,21 @@ class Pipe:
                         except Exception:
                             continue
 
+                        if event.get("type") == "error":
+                            finish_reason = event.get("stop_reason") or event.get("stopReason") or "error"
+                            message = event.get("message") or "Unknown Pi bridge error"
+                            status = message if finish_reason == "stop" else f"Pi stopped with {finish_reason}: {message}"
+                            await self._status(__event_emitter__, status, True)
+                            yield f"\n\n[Pi Bridge] {status}\n"
+                            done = True
+                            break
+
                         if event.get("type") == "done":
+                            finish_reason = event.get("stop_reason") or event.get("stopReason") or finish_reason
+                            if finish_reason != "stop":
+                                message = event.get("message") or event.get("error_message") or "Unknown Pi bridge error"
+                                status = f"Pi stopped with {finish_reason}: {message}"
+                                await self._status(__event_emitter__, status, True)
                             done = True
                             break
 
@@ -251,6 +269,7 @@ class Pipe:
 
         except Exception as exc:
             message = f"Could not reach Pi bridge at {self.valves.bridge_url}: {exc}"
+            finish_reason = "error"
             await self._status(__event_emitter__, message, True)
             yield f"[Pi Bridge] {message}"
 
@@ -259,7 +278,7 @@ class Pipe:
             # but not consistently for AsyncGenerator responses. Emit them explicitly.
             if not done:
                 await self._status(__event_emitter__, "Pi bridge stream ended", True)
-            yield self._done_chunk(model_value)
+            yield self._done_chunk(model_value, finish_reason=finish_reason)
             yield "data: [DONE]"
 
     # ── Main OpenWebUI handler ───────────────────────────────────

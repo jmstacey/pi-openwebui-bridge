@@ -111,6 +111,34 @@ def content_text(content: Any) -> str:
         return "\n".join(p for p in parts if p)
     return str(content or "")
 
+def _normalize_error_text(value: Any) -> str:
+    text = strip_ansi(str(value or "")).strip()
+    if not text:
+        return ""
+    return text if text.lower().startswith("error:") else f"Error: {text}"
+
+
+def _message_error_text(message: Any) -> str:
+    if not isinstance(message, dict):
+        return ""
+    error_text = message.get("errorMessage") or message.get("error")
+    if error_text:
+        return _normalize_error_text(error_text)
+    if str(message.get("stopReason") or message.get("stop_reason") or "").lower() == "error":
+        fallback = message.get("message") or message.get("text") or "Unknown error"
+        return _normalize_error_text(fallback)
+    return ""
+
+
+def _event_error_text(event: Any) -> str:
+    if not isinstance(event, dict):
+        return ""
+    for candidate in (event, event.get("assistantMessageEvent"), event.get("message"), event.get("data")):
+        error_text = _message_error_text(candidate)
+        if error_text:
+            return error_text
+    return ""
+
 
 # Tools whose output is best shown in a language-fenced code block.
 _SHELL_TOOLS = {"bash", "sh", "zsh"}
@@ -204,7 +232,7 @@ def _render_tool_call(name: str, args: dict, result: Optional[str], is_error: bo
     return "\n".join(lines)
 
 
-def content_to_owui_markdown(content: Any) -> str:
+def content_to_owui_markdown(content: Any, error_text: str = "") -> str:
     """Render Pi assistant message content (content block list) as OpenWebUI markdown.
 
     Handles: thinking, text, toolCall blocks.
@@ -212,9 +240,15 @@ def content_to_owui_markdown(content: Any) -> str:
     where a standalone toolCall block appears without a matching result.
     """
     if isinstance(content, str):
-        return content
+        rendered = content.strip()
+        if rendered and error_text:
+            return f"{rendered}\n\n{error_text}"
+        return rendered or error_text
     if not isinstance(content, list):
-        return str(content or "")
+        rendered = str(content or "").strip()
+        if rendered and error_text:
+            return f"{rendered}\n\n{error_text}"
+        return rendered or error_text
 
     thinking_parts: list[str] = []
     body_parts: list[str] = []
@@ -242,8 +276,10 @@ def content_to_owui_markdown(content: Any) -> str:
         elif btype == "image":
             body_parts.append("*\ud83d\uddbc\ufe0f Image attachment (not shown in projected view)*")
 
-    out = "\n\n".join(body_parts)
-    return out.strip()
+    out = "\n\n".join(body_parts).strip()
+    if out and error_text:
+        return f"{out}\n\n{error_text}"
+    return out or error_text
 
 
 class PiBridgeState:
@@ -575,6 +611,9 @@ class PiBridgeState:
                     role = msg.get("role") or "unknown"
                     raw_content = msg.get("content")
                     plain = content_text(raw_content)
+                    error_text = _message_error_text(msg)
+                    if not plain and error_text:
+                        plain = error_text
                     if role not in {"toolResult"}:
                         message_count += 1
                     if not title and role == "user" and plain:
@@ -589,7 +628,10 @@ class PiBridgeState:
                             "timestamp": event.get("timestamp"),
                             "role": role,
                             "text": plain,
-                            "rendered": content_to_owui_markdown(raw_content),
+                            "stopReason": msg.get("stopReason") or msg.get("stop_reason") or "",
+                            "errorMessage": msg.get("errorMessage") or msg.get("error") or "",
+                            "errorText": error_text,
+                            "rendered": content_to_owui_markdown(raw_content, error_text=error_text),
                             "raw_content": raw_content if isinstance(raw_content, list) else [],
                         }
                         if role == "toolResult":
@@ -795,6 +837,10 @@ class PiBridgeState:
 
                 elif btype == "image":
                     pass  # images not representable as text in projection
+
+            error_text = msg.get("errorText") or _message_error_text(msg)
+            if error_text:
+                round_text.append(error_text)
 
             # Emit thinking block for this round
             if round_thinking:
@@ -1489,6 +1535,23 @@ class PiBridgeState:
                     elif ae_type == "thinking_end":
                         yield {"type": "thinking_end"}
 
+                    stop_reason = str(
+                        ae.get("stopReason")
+                        or ae.get("stop_reason")
+                        or event.get("stopReason")
+                        or event.get("stop_reason")
+                        or ""
+                    ).lower()
+                    error_text = _event_error_text(event)
+                    if stop_reason == "error" or error_text:
+                        if not error_text:
+                            error_text = _normalize_error_text(
+                                ae.get("errorMessage") or ae.get("message") or event.get("message") or "Unknown Pi error"
+                            )
+                        yield {"type": "error", "message": error_text, "stop_reason": stop_reason or "error"}
+                        yield {"type": "done", "stop_reason": stop_reason or "error"}
+                        return
+
                 elif etype == "tool_execution_start":
                     current_tool = event.get("toolName") or "tool"
                     args = event.get("args") or {}
@@ -1535,6 +1598,15 @@ class PiBridgeState:
 
                 elif etype == "extension_ui_request":
                     yield from self._handle_extension_ui(proc, event, payload.get("guardrail_default") or "deny")
+
+                elif etype == "message_start":
+                    msg = event.get("message") or {}
+                    if msg.get("role") == "assistant":
+                        error_text = _message_error_text(msg)
+                        if error_text:
+                            yield {"type": "error", "message": error_text, "stop_reason": "error"}
+                            yield {"type": "done", "stop_reason": "error"}
+                            return
 
                 elif etype == "agent_end":
                     yield {"type": "done"}
