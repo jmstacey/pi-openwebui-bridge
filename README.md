@@ -7,9 +7,8 @@ A bridge between [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com).
 - Start a session in Pi and continue your session in Open WebUI.
 - Start a chat in Open WebUI and run it with Pi on the backend.
 - Pi sessions synced to Open WebUI and back as you would expect.
-- Access Pi loop, extensions, skills, providers, loops.
-- Use Open WebUI Functions and UI. Example: mermaid diagrams.
-- Use Pi tooling from Open WebUI.
+- Access Pi's extensions, skills, providers, loop... all from Open WebUI.
+- Use Open WebUI Functions and Tools with your session backed in Pi.
 - Delete a session in Pi and it gets deleted from Open WebUI.
 - Delete a Pi-backed chat from Open WebUI and its session file gets deleted on your computer.
 
@@ -123,8 +122,14 @@ When configured, the bridge projects Pi sessions into Open WebUI:
 
 The polling interval defaults to 30 seconds and can be changed with `PI_BRIDGE_PROJECTION_SYNC_INTERVAL` or `--projection-sync-interval`.
 
-To continue a canonical Pi session from Open WebUI, pass either `pi_session_id` or `pi_session_file` in the Open WebUI chat metadata/body. The function forwards that metadata to the bridge, which starts Pi with `--session <file>`. Projected Open WebUI chat IDs are also mapped back to their Pi session files so normal Open WebUI chat requests can resume the projected Pi session.
+To continue a Pi session from Open WebUI, pass either `pi_session_id` or `pi_session_file` in the Open WebUI chat metadata/body. The function forwards that metadata to the bridge, which starts Pi with `--session <file>`. Projected Open WebUI chat IDs are also mapped back to their Pi session files so normal Open WebUI chat requests can resume the projected Pi session.
 
-Conflict policy is "good luck!". There's no way to determine writers to a session outside the bridge, so play with a session from two computers and what will happen are up to luck.
+## Watch Out!
 
-The projected Open WebUI records should be treated as a rebuildable cache; Pi JSONL sessions remain canonical for content. Deletions are bidirectional for mapped Pi-backed chats: deleting the Open WebUI projection deletes the backing Pi JSONL session, and deleting the Pi JSONL session deletes the projected Open WebUI chat.
+The Pi JSONL session files are the source of truth. The chats synced to Open WebUI are treated as rebuildable cache.
+
+Deletions are bidirectional for mapped Pi-backed chats. Deleting the Open WebUI synced chat deletes the Pi JSONL session file, and deleting the Pi JSONL session deletes the previously synced Open WebUI chat. Open WebUi chats that use providers other than Pi are not synced back to Pi, so your OpenRouter/Grok/whoever chat's won't suddenly flood into Pi session history.
+
+Don't play with the same session in Pi TUI and Open WebUI at the same time. Session conflict policy from simultaneous use is "good luck!". There's no locking in Pi to protect from stomping on sessions.
+
+This is intended to run on a trusted local network, and dangerously on the server. There's no interactive user element for guardrails to protect from wiping your hard drive, for example. This bridge was also created with a single-user Open WebUi instance in mind.
