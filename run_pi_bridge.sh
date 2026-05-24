@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 
 export OPENWEBUI_URL="https://127.0.0.1:3000"
 export OPENWEBUI_API_KEY=". . ."
-export PI_BRIDGE_PROJECTION_RECENT_DAYS=5
+export PI_BRIDGE_PROJECTION_RECENT_DAYS=5 # Sync past 5 days of sessions
 
 HOST="${PI_BRIDGE_HOST:-127.0.0.1}"
 PORT="${PI_BRIDGE_PORT:-8765}"
