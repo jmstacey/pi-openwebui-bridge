@@ -2,6 +2,12 @@
 
 A bridge between [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com).
 
+## Demo
+
+<video src="./pi-openwebui-bridge_screen_recording_demo.mp4" controls muted playsinline>
+  <a href="./pi-openwebui-bridge_screen_recording_demo.mp4">Watch the demo video</a>
+</video>
+
 ## Why
 
 - Start a session in Pi and continue your session in Open WebUI.
