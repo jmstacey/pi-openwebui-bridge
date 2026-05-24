@@ -22,25 +22,64 @@ A bridge between Pi and Open WebUI.
 
 ## Install
 
-1. Clone the repo to your computer
+1. Clone the repo to your computer.
 2. Copy `pi_agent_bridge_function.py` to a new Open WebUI function with slug `pi_agent_bridge_function.py`.
-3. Edit function settings to point to your bridge URL (for example `http://host.docker.internal:8765`)
-3. Create an API key to Open WebUI for your user. 
-4. Edit `run_pi_bridge.sh` convenience launcher with your Open WebUI server URL, API key.
-5. Launch the bridge server `run_pi_bridge.sh`
+3. Edit function settings to point to your bridge URL (for example `http://host.docker.internal:8765`).
+4. Copy `bridge.env.example` to your local config file:
+
+   ```bash
+   mkdir -p ~/.config/pi-openwebui-bridge
+   cp bridge.env.example ~/.config/pi-openwebui-bridge/bridge.env
+   ```
+
+5. Edit `~/.config/pi-openwebui-bridge/bridge.env` and set `OPENWEBUI_URL`, `OPENWEBUI_API_KEY`, and `PI_BINARY` if `pi` is not already on your PATH.
+6. Launch the bridge with `./run_pi_bridge.sh`.
 
 ## Usage
 
-Run the bridge server:
+Run the bridge server manually:
 
 ```bash
 ./run_pi_bridge.sh
 ```
-By default it listens on `127.0.0.1:8765`.
 
+By default it listens on `127.0.0.1:8765`.
 For Open WebUI, point the function at the bridge URL (for example `http://host.docker.internal:8765`).
 
-PI_BRIDGE_PROJECTION_RECENT_DAYS=5
+To configure an automatic macOS launch:
+
+1. Copy `com.example.pi-openwebui-bridge.plist` to `~/Library/LaunchAgents/com.example.pi-openwebui-bridge.plist`, or rename it to your own reverse-DNS label.
+2. Replace `/ABSOLUTE/PATH/TO/REPO/run_pi_bridge.sh` with the actual path to your clone.
+3. If you rename the plist, update the `Label` value inside the plist to match.
+4. Make sure your local config file exists at `~/.config/pi-openwebui-bridge/bridge.env` and set `PI_BINARY=pi` (or your own absolute path) if needed.
+5. Load it with:
+
+   ```bash
+   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.example.pi-openwebui-bridge.plist
+   ```
+
+To unload it later:
+
+```bash
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.example.pi-openwebui-bridge.plist
+```
+
+The checked-in plist is an example template only.
+
+### Restart continuity troubleshooting
+
+The bridge persists OpenWebUI chat continuity in `chat_sessions.json` under the configured Pi bridge session directory. If an existing OpenWebUI chat appears to forget earlier context after a bridge restart:
+
+1. Check bridge diagnostics:
+
+   ```bash
+   curl http://127.0.0.1:8765/sessions
+   ```
+
+2. Confirm `mapping_file` is the expected path and `mapping_file_writeable` is `true`.
+3. Check the bridge stderr log for `[persistence]` or `[sessions]` messages.
+
+When a mapping is missing, the bridge attempts to recover by matching prior OpenWebUI user messages to existing Pi session JSONL files before creating a new session.
 
 ## Pi session continuity
 

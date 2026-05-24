@@ -3,12 +3,12 @@ title: Pi Agent Bridge Function
 author: jon
 description: |
   OpenWebUI Function that connects Dockerized OpenWebUI to a macOS Pi bridge.
-  The bridge owns pi-life-web --mode rpc subprocesses on the host. This Function owns
+  The bridge owns Pi --mode rpc subprocesses on the host. This Function owns
   OpenWebUI integration: model listing, streaming response text, thinking blocks,
   and real WebSocket status events via __event_emitter__.
 
   Required host bridge:
-    python3 /Users/jon/Downloads/pi_bridge_server.py --host 127.0.0.1 --port 8765
+    python3 /path/to/pi_bridge_server.py --host 127.0.0.1 --port 8765
 
 version: 0.1.0
 requirements: aiohttp, pydantic

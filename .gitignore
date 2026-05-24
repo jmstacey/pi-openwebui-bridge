@@ -23,3 +23,4 @@ ENV/
 .pi/
 .ralph/
 *.log
+my_start.txt

@@ -3,7 +3,7 @@
 Pi Bridge Server
 
 A small macOS host bridge for OpenWebUI Functions running in Docker.
-It owns pi-life-web --mode rpc subprocesses and exposes a narrow HTTP/SSE API.
+It owns Pi --mode rpc subprocesses and exposes a narrow HTTP/SSE API.
 
 Endpoints:
   GET  /health
@@ -285,7 +285,7 @@ def content_to_owui_markdown(content: Any, error_text: str = "") -> str:
 class PiBridgeState:
     def __init__(
         self,
-        pi_binary: str = "pi-life-web",
+        pi_binary: str = "pi",
         session_dir: str = str(DEFAULT_OWUI_SESSION_DIR),
         idle_timeout_seconds: int = 300,
         fallback_model: str = "openai-codex/gpt-5.2",
@@ -323,6 +323,7 @@ class PiBridgeState:
         self.projection_max_message_chars = max(100, projection_max_message_chars)
         self.owui_function_id = owui_function_id
         self.projection_file = self.session_dir / "openwebui_projection.json"
+        self.persistence_errors: list[dict[str, Any]] = []
         self.projection: dict[str, dict[str, Any]] = self._load_projection()
         self._sync_stop = threading.Event()
         self._sync_thread: Optional[threading.Thread] = None
@@ -333,6 +334,10 @@ class PiBridgeState:
         self._write_workspace_settings()
         self.mapping_file = self.session_dir / "chat_sessions.json"
         self.mapping: dict[str, str] = self._load_mapping()
+        print(f"Pi bridge session dir: {self.session_dir}", flush=True)
+        print(f"Pi bridge mapping file: {self.mapping_file}", flush=True)
+        print(f"Pi bridge projection file: {self.projection_file}", flush=True)
+        print(f"Pi bridge indexed session dirs: {[str(p) for p in self.indexed_session_dirs]}", flush=True)
 
         self.procs: dict[str, subprocess.Popen] = {}
         self.last_used: dict[str, float] = {}
@@ -379,20 +384,49 @@ class PiBridgeState:
 
     # ── Mapping/session persistence ──────────────────────────────
 
+    def _record_persistence_error(self, operation: str, path: Path, exc: Exception):
+        error = {
+            "operation": operation,
+            "path": str(path),
+            "error": f"{type(exc).__name__}: {exc}",
+            "timestamp": time.time(),
+        }
+        self.persistence_errors.append(error)
+        self.persistence_errors = self.persistence_errors[-20:]
+        print(
+            f"[persistence] {operation} failed for {path}: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+
+    def _atomic_write_json(self, path: Path, data: Any, operation: str):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        try:
+            tmp.write_text(json.dumps(data, indent=2))
+            tmp.replace(path)
+        except Exception as exc:
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+            self._record_persistence_error(operation, path, exc)
+            raise
+
     def _load_mapping(self) -> dict[str, str]:
         if not self.mapping_file.exists():
             return {}
         try:
             data = json.loads(self.mapping_file.read_text())
             return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
-        except Exception:
+        except Exception as exc:
+            self._record_persistence_error("load mapping", self.mapping_file, exc)
             return {}
 
     def _save_mapping(self):
-        try:
-            self.mapping_file.write_text(json.dumps(self.mapping, indent=2))
-        except Exception:
-            pass
+        with self.state_lock:
+            data = dict(self.mapping)
+        self._atomic_write_json(self.mapping_file, data, "save mapping")
 
     def _load_projection(self) -> dict[str, dict[str, Any]]:
         if not self.projection_file.exists():
@@ -400,14 +434,14 @@ class PiBridgeState:
         try:
             data = json.loads(self.projection_file.read_text())
             return {str(k): v for k, v in data.items() if isinstance(v, dict)} if isinstance(data, dict) else {}
-        except Exception:
+        except Exception as exc:
+            self._record_persistence_error("load projection", self.projection_file, exc)
             return {}
 
     def _save_projection(self):
-        try:
-            self.projection_file.write_text(json.dumps(self.projection, indent=2))
-        except Exception:
-            pass
+        with self.state_lock:
+            data = dict(self.projection)
+        self._atomic_write_json(self.projection_file, data, "save projection")
 
     # ── Pi RPC primitives ────────────────────────────────────────
 
@@ -1284,16 +1318,121 @@ class PiBridgeState:
                         except Exception:
                             pass
 
+    def _log_session(self, chat_id: str, message: str):
+        print(f"[sessions] chat={chat_id} {message}", file=sys.stderr, flush=True)
+
+    def _payload_user_texts(self, payload: dict) -> list[str]:
+        texts: list[str] = []
+        for msg in payload.get("messages") or []:
+            if not isinstance(msg, dict) or msg.get("role") != "user":
+                continue
+            text = content_text(msg.get("content")).strip()
+            if text:
+                texts.append(text)
+        return texts
+
+    def _recover_session_from_payload_history(self, chat_id: str, payload: dict) -> Optional[str]:
+        user_texts = self._payload_user_texts(payload)
+        prior_user_texts = user_texts[:-1]
+        if not prior_user_texts:
+            return None
+
+        min_score = 2 if len(prior_user_texts) >= 2 else 1
+        candidates: list[tuple[int, int, int, float, str]] = []
+        for path in self._iter_session_files():
+            record = self._read_session_record(path, include_messages=True)
+            if not record:
+                continue
+            session_user_texts = [
+                str(m.get("text") or "").strip()
+                for m in record.get("messages", [])
+                if m.get("role") == "user" and str(m.get("text") or "").strip()
+            ]
+            if not session_user_texts:
+                continue
+
+            max_score = min(len(prior_user_texts), len(session_user_texts))
+            prefix_score = 0
+            for n in range(max_score, 0, -1):
+                if prior_user_texts[:n] == session_user_texts[:n]:
+                    prefix_score = n
+                    break
+
+            suffix_score = 0
+            for n in range(max_score, 0, -1):
+                if prior_user_texts[-n:] == session_user_texts[-n:]:
+                    suffix_score = n
+                    break
+
+            # Count ordered overlap anywhere in the OpenWebUI history. This is a
+            # fallback for recovered/branched chats where the Pi session is a
+            # prefix of the chat history but not a suffix after a bad restart.
+            ordered_score = 0
+            search_from = 0
+            for session_text in session_user_texts:
+                try:
+                    found_at = prior_user_texts.index(session_text, search_from)
+                except ValueError:
+                    continue
+                ordered_score += 1
+                search_from = found_at + 1
+
+            score = max(prefix_score, suffix_score, ordered_score)
+            if score >= min_score:
+                candidates.append((
+                    prefix_score,
+                    ordered_score,
+                    suffix_score,
+                    float(record.get("updatedAt") or 0),
+                    str(record.get("sessionFile")),
+                ))
+
+        if not candidates:
+            self._log_session(chat_id, f"history recovery found no match using {len(prior_user_texts)} prior user messages")
+            return None
+
+        # Prefer prefix matches, because an OpenWebUI chat that lost its mapping
+        # should usually start with the original Pi session's user turns. Suffix
+        # matches can identify the wrong fresh session created after a bad restart.
+        candidates.sort(key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
+        best_prefix, best_ordered, best_suffix, _, best_path = candidates[0]
+        best_key = (best_prefix, best_ordered, best_suffix)
+        ties = [c for c in candidates if (c[0], c[1], c[2]) == best_key]
+        if len(prior_user_texts) == 1 and len(ties) > 1:
+            self._log_session(chat_id, f"history recovery ambiguous for one prior user message; candidates={len(ties)}")
+            return None
+
+        self._log_session(
+            chat_id,
+            f"recovered session from payload history: {best_path} "
+            f"(prefix={best_prefix}, ordered={best_ordered}, suffix={best_suffix})",
+        )
+        return best_path
+
     def _target_session_for_payload(self, chat_id: str, payload: dict) -> Optional[str]:
         explicit = payload.get("pi_session_id") or payload.get("pi_session_file")
         if explicit:
             record = self._resolve_session(str(explicit))
             if not record:
                 raise FileNotFoundError(f"Unknown Pi session: {explicit}")
-            return str(record["sessionFile"])
+            session_file = str(record["sessionFile"])
+            self._log_session(chat_id, f"using explicit Pi session: {session_file}")
+            return session_file
         existing = self.mapping.get(chat_id)
         if existing and Path(existing).exists():
+            self._log_session(chat_id, f"using persisted mapping: {existing}")
             return existing
+        if existing:
+            self._log_session(chat_id, f"ignoring stale persisted mapping: {existing}")
+
+        recovered = self._recover_session_from_payload_history(chat_id, payload)
+        if recovered:
+            with self.state_lock:
+                self.mapping[chat_id] = recovered
+            self._save_mapping()
+            return recovered
+
+        self._log_session(chat_id, "no existing session mapping; a new Pi session will be created")
         return None
 
     def _spawn_for_chat(self, chat_id: str, payload: dict) -> subprocess.Popen:
@@ -1302,19 +1441,27 @@ class PiBridgeState:
         if target_session:
             owner = self._active_writer_for(target_session, chat_id)
             if owner:
+                self._log_session(chat_id, f"target session is active for chat={owner}; forking from {target_session}")
                 proc = self._spawn_rpc(fork_path=target_session)
                 forked = True
             else:
+                self._log_session(chat_id, f"spawning Pi with session: {target_session}")
                 proc = self._spawn_rpc(session_path=target_session)
         else:
+            self._log_session(chat_id, f"spawning Pi with session dir: {self.session_dir}")
             proc = self._spawn_rpc(no_session=False)
 
         self._send(proc, {"type": "get_state"})
         resp = self._read_response(proc)
         session_file = (resp.get("data") or {}).get("sessionFile")
         if session_file:
+            previous = self.mapping.get(chat_id)
             self.mapping[chat_id] = session_file
             self._save_mapping()
+            if previous and self._session_key(previous) != self._session_key(session_file):
+                self._log_session(chat_id, f"updated mapping: {previous} -> {session_file}")
+            else:
+                self._log_session(chat_id, f"persisted mapping: {session_file}")
             with self.state_lock:
                 self.session_writers[self._session_key(session_file)] = chat_id
             # Register in projection so the background sync doesn't create a duplicate
@@ -1391,11 +1538,18 @@ class PiBridgeState:
                 )
         return {
             "idle_timeout_seconds": self.idle_timeout_seconds,
+            "session_dir": str(self.session_dir),
             "mapping_file": str(self.mapping_file),
+            "mapping_file_exists": self.mapping_file.exists(),
+            "mapping_file_writeable": os.access(self.mapping_file.parent, os.W_OK),
+            "projection_file": str(self.projection_file),
+            "projection_file_exists": self.projection_file.exists(),
+            "projection_file_writeable": os.access(self.projection_file.parent, os.W_OK),
             "workspace_dir": str(self.workspace_dir),
             "indexed_session_dirs": [str(p) for p in self.indexed_session_dirs],
             "exclude_loadout_extension": self.exclude_loadout_extension,
             "active_writers": dict(self.session_writers),
+            "persistence_errors": list(self.persistence_errors),
             "sessions": sessions,
         }
 
@@ -1828,7 +1982,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pi bridge server for OpenWebUI Functions")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--pi-binary", default=os.environ.get("PI_BINARY", "pi-life-web"))
+    parser.add_argument("--pi-binary", default=os.environ.get("PI_BINARY", "pi"))
     parser.add_argument("--session-dir", default=os.environ.get("PI_BRIDGE_SESSION_DIR", str(DEFAULT_OWUI_SESSION_DIR)))
     parser.add_argument("--workspace-dir", default=os.environ.get("PI_BRIDGE_WORKSPACE_DIR", str(Path.home() / ".pi" / "owui-bridge-workspace")))
     parser.add_argument("--idle-timeout", type=int, default=int(os.environ.get("PI_BRIDGE_IDLE_TIMEOUT", "300")))
