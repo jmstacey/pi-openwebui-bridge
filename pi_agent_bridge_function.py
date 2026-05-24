@@ -292,6 +292,11 @@ class Pipe:
             "reasoning_effort": body.get("reasoning_effort"),
             "default_thinking_level": self.valves.default_thinking_level,
             "guardrail_default": self.valves.guardrail_default,
+            # Optional Pi continuity metadata. Normal OpenWebUI chats/providers are
+            # unaffected; only Pi-backed chats that carry these fields attach to an
+            # existing canonical Pi session.
+            "pi_session_id": metadata.get("pi_session_id") or body.get("pi_session_id"),
+            "pi_session_file": metadata.get("pi_session_file") or body.get("pi_session_file"),
         }
 
         return self._stream_bridge(payload, model_value, __event_emitter__)
