@@ -2,12 +2,6 @@
 
 A bridge between [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com).
 
-## Demo
-
-<video src="./pi-openwebui-bridge_screen_recording_demo.mp4" controls muted playsinline>
-  <a href="./pi-openwebui-bridge_screen_recording_demo.mp4">Watch the demo video</a>
-</video>
-
 ## Why
 
 - Start a session in Pi and continue your session in Open WebUI.
@@ -25,6 +19,11 @@ A bridge between [Pi](https://pi.dev) and [Open WebUI](https://openwebui.com).
 - The bridge syncs Pi sessions to Open WebUI.
 - The bridge uses Pi RPC mode to act as a provider to Open WebUI. `pi --mode rpc`.
 - Use a Pi profile to limit access, tools, etc.
+
+## Demo 
+
+https://github.com/user-attachments/assets/8beccfbe-c393-4f5b-9c38-16a2aa0bb7bd
+
 
 ## Install
 
